@@ -1,5 +1,6 @@
 import time
 
+import cv2
 import numpy as np
 from picamera2 import Picamera2
 
@@ -29,12 +30,19 @@ def main():
     try:
         while True:
             frame = camera.capture_array()
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
 
             motion, mask = detector.detect(frame)
 
             if motion and (time.time() - last_capture_time) >= COOLDOWN_SECONDS:
-                cat_id = identifier.identify(frame, mask)
-                image_path = logger.log(frame, cat_id)
+                time.sleep(0.5)
+                photo = camera.capture_array()
+                photo = cv2.rotate(photo, cv2.ROTATE_180)
+                cat_id, bbox = identifier.identify(photo, mask)
+                if bbox is not None:
+                    x, y, w, h = bbox
+                    cv2.rectangle(photo, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                image_path = logger.log(photo, cat_id)
                 last_capture_time = time.time()
                 print(f"Motion detected — cat: {cat_id} — saved {image_path}")
 

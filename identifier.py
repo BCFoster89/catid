@@ -11,14 +11,15 @@ class CatIdentifier:
     def identify(self, frame, mask):
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
-            return "unknown"
+            return "unknown", None
 
         largest = max(contours, key=cv2.contourArea)
         x, y, w, h = cv2.boundingRect(largest)
+        bbox = (x, y, w, h)
         crop = frame[y:y+h, x:x+w]
 
         if crop.size == 0:
-            return "unknown"
+            return "unknown", None
 
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
 
@@ -37,6 +38,7 @@ class CatIdentifier:
         brown_pixels = cv2.countNonZero(brown_mask)
 
         if orange_pixels < MIN_COLOR_PIXELS and brown_pixels < MIN_COLOR_PIXELS:
-            return "unknown"
+            return "unknown", bbox
 
-        return "orange" if orange_pixels >= brown_pixels else "brown"
+        cat_id = "orange" if orange_pixels >= brown_pixels else "brown"
+        return cat_id, bbox
