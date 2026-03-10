@@ -13,7 +13,7 @@ from logger import CatLogger
 def main():
     camera = Picamera2()
     config = camera.create_video_configuration(
-        main={"size": RESOLUTION, "format": "BGR888"},
+        main={"size": RESOLUTION, "format": "RGB888"},
         controls={"FrameRate": FRAMERATE},
     )
     camera.configure(config)
@@ -30,6 +30,7 @@ def main():
     try:
         while True:
             frame = camera.capture_array()
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             frame = cv2.rotate(frame, cv2.ROTATE_180)
 
             motion, mask = detector.detect(frame)
@@ -37,6 +38,7 @@ def main():
             if motion and (time.time() - last_capture_time) >= COOLDOWN_SECONDS:
                 time.sleep(0.5)
                 photo = camera.capture_array()
+                photo = cv2.cvtColor(photo, cv2.COLOR_RGB2BGR)
                 photo = cv2.rotate(photo, cv2.ROTATE_180)
                 cat_id, bbox = identifier.identify(photo, mask)
                 if bbox is not None:
