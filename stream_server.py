@@ -5,12 +5,14 @@ from flask import Flask, Response, abort
 app = Flask(__name__)
 _buffer = None
 _token = None
+_framerate = 15
 
 
-def init(frame_buffer, token):
-    global _buffer, _token
+def init(frame_buffer, token, framerate=15):
+    global _buffer, _token, _framerate
     _buffer = frame_buffer
     _token = token
+    _framerate = framerate
 
 
 def _mjpeg_generator():
@@ -23,6 +25,7 @@ def _mjpeg_generator():
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         )
+        time.sleep(1 / _framerate)
 
 
 @app.route("/<token>")

@@ -1,5 +1,8 @@
 import os
+import re
 import secrets
+import socket
+import subprocess
 import threading
 
 import cv2
@@ -32,6 +35,44 @@ class FrameBuffer:
             return self._frame
 
 
+def _start_public_tunnel(port):
+    url_holder = [None]
+    url_ready = threading.Event()
+    proc = subprocess.Popen(
+        [
+            "ssh", "-o", "StrictHostKeyChecking=no",
+            "-o", "ServerAliveInterval=30",
+            "-R", f"80:localhost:{port}",
+            "nokey@localhost.run",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    def _read():
+        for line in proc.stdout:
+            m = re.search(r'https://\S+', line)
+            if m:
+                url_holder[0] = m.group(0).rstrip(".")
+                url_ready.set()
+
+    threading.Thread(target=_read, daemon=True).start()
+    url_ready.wait(timeout=15)
+    return proc, url_holder[0]
+
+
+def _get_lan_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return None
+
+
 def load_or_create_token():
     if os.path.exists(TOKEN_FILE):
         with open(TOKEN_FILE) as f:
@@ -46,9 +87,9 @@ def main():
     token = load_or_create_token()
     buffer = FrameBuffer()
 
-    stream_server.init(buffer, token)
+    stream_server.init(buffer, token, FRAMERATE)
     flask_thread = threading.Thread(
-        target=lambda: stream_server.app.run(host="0.0.0.0", port=STREAM_PORT),
+        target=lambda: stream_server.app.run(host="0.0.0.0", port=STREAM_PORT, threaded=True),
         daemon=True,
     )
     flask_thread.start()
@@ -64,8 +105,16 @@ def main():
     camera.configure(cam_config)
     camera.start()
 
+    tunnel_proc, public_url = _start_public_tunnel(STREAM_PORT)
+
+    lan_ip = _get_lan_ip()
     print(f"Stream live at  http://localhost:{STREAM_PORT}/{token}")
-    print(f"Share token:    {token}")
+    if lan_ip:
+        print(f"On your network: http://{lan_ip}:{STREAM_PORT}/{token}")
+    if public_url:
+        print(f"Public link:     {public_url}/{token}")
+    else:
+        print("Could not get public URL (localhost.run unavailable?).")
     print("Press Ctrl+C to stop.")
 
     try:
@@ -79,6 +128,7 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping.")
     finally:
+        tunnel_proc.terminate()
         camera.stop()
 
 
