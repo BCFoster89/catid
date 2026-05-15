@@ -44,10 +44,35 @@ def viewer(token):
   </style>
 </head>
 <body>
-  <img src="/{token}/feed" alt="live feed">
+  <img id="feed" alt="live feed">
+  <script>
+    var img = document.getElementById('feed');
+    function refresh() {{
+      img.src = '/{token}/snapshot?' + Date.now();
+    }}
+    refresh();
+    setInterval(refresh, Math.round(1000 / {_framerate}));
+  </script>
 </body>
 </html>"""
     return html
+
+
+@app.route("/<token>/snapshot")
+def snapshot(token):
+    if token != _token:
+        abort(404)
+    frame = _buffer.read()
+    if frame is None:
+        abort(503)
+    return Response(
+        frame,
+        mimetype="image/jpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.route("/<token>/feed")
@@ -57,4 +82,8 @@ def feed(token):
     return Response(
         _mjpeg_generator(),
         mimetype="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",
+        },
     )
