@@ -120,7 +120,6 @@ def main():
     try:
         while True:
             frame = camera.capture_array()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             frame = cv2.rotate(frame, cv2.ROTATE_180)
             ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
             if ok:
