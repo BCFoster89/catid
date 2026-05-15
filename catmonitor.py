@@ -1,53 +1,81 @@
-import time
+import os
+import secrets
+import threading
 
 import cv2
-import numpy as np
 from picamera2 import Picamera2
 
-from config import RESOLUTION, FRAMERATE, COOLDOWN_SECONDS
-from detector import MotionDetector
-from identifier import CatIdentifier
-from logger import CatLogger
+import stream_server
+from config import (
+    FRAMERATE,
+    JPEG_QUALITY,
+    RESOLUTION,
+    STREAM_PORT,
+    TIMELAPSE_DIR,
+    TIMELAPSE_INTERVAL,
+    TOKEN_FILE,
+)
+from timelapse import TimelapseSaver
+
+
+class FrameBuffer:
+    def __init__(self):
+        self._frame = None
+        self._lock = threading.Lock()
+
+    def update(self, jpeg_bytes):
+        with self._lock:
+            self._frame = jpeg_bytes
+
+    def read(self):
+        with self._lock:
+            return self._frame
+
+
+def load_or_create_token():
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            return f.read().strip()
+    token = secrets.token_urlsafe(16)
+    with open(TOKEN_FILE, "w") as f:
+        f.write(token)
+    return token
 
 
 def main():
+    token = load_or_create_token()
+    buffer = FrameBuffer()
+
+    stream_server.init(buffer, token)
+    flask_thread = threading.Thread(
+        target=lambda: stream_server.app.run(host="0.0.0.0", port=STREAM_PORT),
+        daemon=True,
+    )
+    flask_thread.start()
+
+    timelapse = TimelapseSaver(buffer, TIMELAPSE_INTERVAL, TIMELAPSE_DIR)
+    timelapse.start()
+
     camera = Picamera2()
-    config = camera.create_video_configuration(
+    cam_config = camera.create_video_configuration(
         main={"size": RESOLUTION, "format": "RGB888"},
         controls={"FrameRate": FRAMERATE},
     )
-    camera.configure(config)
+    camera.configure(cam_config)
     camera.start()
 
-    detector = MotionDetector()
-    identifier = CatIdentifier()
-    logger = CatLogger()
-
-    last_capture_time = 0.0
-
-    print("Cat monitor running. Press Ctrl+C to stop.")
+    print(f"Stream live at  http://localhost:{STREAM_PORT}/{token}")
+    print(f"Share token:    {token}")
+    print("Press Ctrl+C to stop.")
 
     try:
         while True:
             frame = camera.capture_array()
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             frame = cv2.rotate(frame, cv2.ROTATE_180)
-
-            motion, mask = detector.detect(frame)
-
-            if motion and (time.time() - last_capture_time) >= COOLDOWN_SECONDS:
-                time.sleep(0.5)
-                photo = camera.capture_array()
-                photo = cv2.cvtColor(photo, cv2.COLOR_RGB2BGR)
-                photo = cv2.rotate(photo, cv2.ROTATE_180)
-                cat_id, bbox = identifier.identify(photo, mask)
-                if bbox is not None:
-                    x, y, w, h = bbox
-                    cv2.rectangle(photo, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                image_path = logger.log(photo, cat_id)
-                last_capture_time = time.time()
-                print(f"Motion detected — cat: {cat_id} — saved {image_path}")
-
+            ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+            if ok:
+                buffer.update(jpeg.tobytes())
     except KeyboardInterrupt:
         print("\nStopping.")
     finally:
