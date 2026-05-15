@@ -48,10 +48,12 @@ def viewer(token):
   <script>
     var img = document.getElementById('feed');
     function refresh() {{
-      img.src = '/{token}/snapshot?' + Date.now();
+      var next = new Image();
+      next.onload = function() {{ img.src = next.src; refresh(); }};
+      next.onerror = function() {{ setTimeout(refresh, 200); }};
+      next.src = '/{token}/snapshot?' + Date.now();
     }}
     refresh();
-    setInterval(refresh, Math.round(1000 / {_framerate}));
   </script>
 </body>
 </html>"""
