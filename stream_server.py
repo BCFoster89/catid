@@ -1,18 +1,23 @@
+import glob
+import json
+import os
 import time
 
-from flask import Flask, Response, abort
+from flask import Flask, Response, abort, send_from_directory
 
 app = Flask(__name__)
 _buffer = None
 _token = None
 _framerate = 15
+_timelapse_dir = "timelapse"
 
 
-def init(frame_buffer, token, framerate=15):
-    global _buffer, _token, _framerate
+def init(frame_buffer, token, framerate=15, timelapse_dir="timelapse"):
+    global _buffer, _token, _framerate, _timelapse_dir
     _buffer = frame_buffer
     _token = token
     _framerate = framerate
+    _timelapse_dir = os.path.abspath(timelapse_dir)
 
 
 def _mjpeg_generator():
@@ -37,27 +42,94 @@ def viewer(token):
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Live Feed</title>
+  <title>Cat Cam</title>
   <style>
-    body {{ margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }}
-    img {{ max-width: 100%; max-height: 100vh; }}
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ background: #000; display: flex; flex-direction: column; height: 100vh; }}
+    #feed {{ width: 100%; flex: 1; object-fit: contain; min-height: 0; }}
+    #bar {{ display: flex; justify-content: center; align-items: center; gap: 12px; padding: 8px; background: #111; flex-shrink: 0; }}
+    button {{ background: #333; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 15px; cursor: pointer; }}
+    button:active {{ background: #555; }}
+    #tl-info {{ color: #aaa; font-size: 13px; font-family: sans-serif; min-width: 80px; text-align: center; }}
   </style>
 </head>
 <body>
   <img id="feed" alt="live feed">
+  <div id="bar">
+    <button id="tl-btn" onclick="startTimelapse()">&#9654; Timelapse</button>
+    <span id="tl-info"></span>
+    <button id="live-btn" style="display:none" onclick="stopTimelapse()">&#10005; Back to Live</button>
+  </div>
   <script>
     var img = document.getElementById('feed');
+    var tlBtn = document.getElementById('tl-btn');
+    var liveBtn = document.getElementById('live-btn');
+    var tlInfo = document.getElementById('tl-info');
+    var live = true;
+    var frames = [];
+    var idx = 0;
+    var timer = null;
+
     function refresh() {{
-      var next = new Image();
-      next.onload = function() {{ img.src = next.src; refresh(); }};
-      next.onerror = function() {{ setTimeout(refresh, 200); }};
-      next.src = '/{token}/snapshot?' + Date.now();
+      if (!live) return;
+      var n = new Image();
+      n.onload = function() {{ img.src = n.src; if (live) refresh(); }};
+      n.onerror = function() {{ if (live) setTimeout(refresh, 200); }};
+      n.src = '/{token}/snapshot?' + Date.now();
     }}
+
+    function startTimelapse() {{
+      fetch('/{token}/timelapse-list')
+        .then(function(r) {{ return r.json(); }})
+        .then(function(files) {{
+          if (!files.length) {{ tlInfo.textContent = 'No frames yet'; return; }}
+          frames = files;
+          idx = 0;
+          live = false;
+          tlBtn.style.display = 'none';
+          liveBtn.style.display = '';
+          playFrame();
+        }});
+    }}
+
+    function playFrame() {{
+      if (live) return;
+      img.src = '/{token}/timelapse/' + frames[idx] + '?' + Date.now();
+      tlInfo.textContent = (idx + 1) + ' / ' + frames.length;
+      idx = (idx + 1) % frames.length;
+      timer = setTimeout(playFrame, 100);
+    }}
+
+    function stopTimelapse() {{
+      live = true;
+      clearTimeout(timer);
+      liveBtn.style.display = 'none';
+      tlBtn.style.display = '';
+      tlInfo.textContent = '';
+      refresh();
+    }}
+
     refresh();
   </script>
 </body>
 </html>"""
     return html
+
+
+@app.route("/<token>/timelapse-list")
+def timelapse_list(token):
+    if token != _token:
+        abort(404)
+    files = sorted(glob.glob(os.path.join(_timelapse_dir, "*", "*.jpg")))
+    rel = [os.path.relpath(f, _timelapse_dir).replace(os.sep, "/") for f in files]
+    return Response(json.dumps(rel), mimetype="application/json")
+
+
+@app.route("/<token>/timelapse/<path:filename>")
+def timelapse_image(token, filename):
+    if token != _token:
+        abort(404)
+    return send_from_directory(_timelapse_dir, filename)
 
 
 @app.route("/<token>/snapshot")

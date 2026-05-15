@@ -4,6 +4,7 @@ import secrets
 import socket
 import subprocess
 import threading
+import time
 
 import cv2
 from picamera2 import Picamera2
@@ -62,6 +63,28 @@ def _start_public_tunnel(port):
     return proc, url_holder[0]
 
 
+_tunnel_proc = None
+
+
+def _tunnel_monitor(port, token):
+    global _tunnel_proc
+    while True:
+        proc, url = _start_public_tunnel(port)
+        _tunnel_proc = proc
+        if url:
+            print(f"Public link:     {url}/{token}")
+        else:
+            print("Tunnel failed, retrying in 30s...")
+            proc.terminate()
+            _tunnel_proc = None
+            time.sleep(30)
+            continue
+        proc.wait()
+        _tunnel_proc = None
+        print("Tunnel dropped, reconnecting in 5s...")
+        time.sleep(5)
+
+
 def _get_lan_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -87,7 +110,7 @@ def main():
     token = load_or_create_token()
     buffer = FrameBuffer()
 
-    stream_server.init(buffer, token, FRAMERATE)
+    stream_server.init(buffer, token, FRAMERATE, TIMELAPSE_DIR)
     flask_thread = threading.Thread(
         target=lambda: stream_server.app.run(host="0.0.0.0", port=STREAM_PORT, threaded=True),
         daemon=True,
@@ -105,16 +128,13 @@ def main():
     camera.configure(cam_config)
     camera.start()
 
-    tunnel_proc, public_url = _start_public_tunnel(STREAM_PORT)
+    threading.Thread(target=lambda: _tunnel_monitor(STREAM_PORT, token), daemon=True).start()
 
     lan_ip = _get_lan_ip()
     print(f"Stream live at  http://localhost:{STREAM_PORT}/{token}")
     if lan_ip:
         print(f"On your network: http://{lan_ip}:{STREAM_PORT}/{token}")
-    if public_url:
-        print(f"Public link:     {public_url}/{token}")
-    else:
-        print("Could not get public URL (localhost.run unavailable?).")
+    print("Public link:     (connecting...)")
     print("Press Ctrl+C to stop.")
 
     try:
@@ -127,7 +147,8 @@ def main():
     except KeyboardInterrupt:
         print("\nStopping.")
     finally:
-        tunnel_proc.terminate()
+        if _tunnel_proc:
+            _tunnel_proc.terminate()
         camera.stop()
 
 
