@@ -52,7 +52,7 @@ def _start_public_tunnel(port):
 
     def _read():
         for line in proc.stdout:
-            m = re.search(r'https://\S+', line)
+            m = re.search(r'https://\S+\.lhr\.life', line)
             if m:
                 url_holder[0] = m.group(0).rstrip(".")
                 url_ready.set()
