@@ -69,20 +69,25 @@ _tunnel_proc = None
 def _tunnel_monitor(port, token):
     global _tunnel_proc
     while True:
-        proc, url = _start_public_tunnel(port)
-        _tunnel_proc = proc
-        if url:
-            print(f"Public link:     {url}/{token}")
-        else:
-            print("Tunnel failed, retrying in 30s...")
-            proc.terminate()
+        try:
+            proc, url = _start_public_tunnel(port)
+            _tunnel_proc = proc
+            if url:
+                print(f"Public link:     {url}/{token}")
+            else:
+                print("Tunnel failed, retrying in 30s...")
+                proc.terminate()
+                _tunnel_proc = None
+                time.sleep(30)
+                continue
+            proc.wait()
+            _tunnel_proc = None
+            print("Tunnel dropped, reconnecting in 5s...")
+            time.sleep(5)
+        except Exception as e:
+            print(f"Tunnel error: {e}; retrying in 30s...")
             _tunnel_proc = None
             time.sleep(30)
-            continue
-        proc.wait()
-        _tunnel_proc = None
-        print("Tunnel dropped, reconnecting in 5s...")
-        time.sleep(5)
 
 
 def _get_lan_ip():
@@ -139,7 +144,12 @@ def main():
 
     try:
         while True:
-            frame = camera.capture_array()
+            try:
+                frame = camera.capture_array()
+            except Exception as e:
+                print(f"Camera error: {e}; retrying in 1s...")
+                time.sleep(1)
+                continue
             frame = cv2.rotate(frame, cv2.ROTATE_180)
             ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
             if ok:

@@ -1,7 +1,9 @@
 import glob
+import io
 import json
 import os
 import time
+import zipfile
 
 from flask import Flask, Response, abort, send_from_directory
 
@@ -59,6 +61,7 @@ def viewer(token):
     <button id="tl-btn" onclick="startTimelapse()">&#9654; Timelapse</button>
     <span id="tl-info"></span>
     <button id="live-btn" style="display:none" onclick="stopTimelapse()">&#10005; Back to Live</button>
+    <button onclick="location.href='/{token}/timelapse-download'">&#8595; Download</button>
   </div>
   <script>
     var img = document.getElementById('feed');
@@ -114,6 +117,24 @@ def viewer(token):
 </body>
 </html>"""
     return html
+
+
+@app.route("/<token>/timelapse-download")
+def timelapse_download(token):
+    if token != _token:
+        abort(404)
+    files = sorted(glob.glob(os.path.join(_timelapse_dir, "*", "*.jpg")))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for f in files:
+            arcname = os.path.relpath(f, _timelapse_dir).replace(os.sep, "/")
+            zf.write(f, arcname)
+    buf.seek(0)
+    return Response(
+        buf.read(),
+        mimetype="application/zip",
+        headers={"Content-Disposition": "attachment; filename=\"timelapse.zip\""},
+    )
 
 
 @app.route("/<token>/timelapse-list")
