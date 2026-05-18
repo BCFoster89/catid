@@ -1,11 +1,12 @@
 import glob
 import io
 import json
+import logging
 import os
 import time
 import zipfile
 
-from flask import Flask, Response, abort, send_from_directory
+from flask import Flask, Response, abort, redirect, send_from_directory
 
 app = Flask(__name__)
 _buffer = None
@@ -20,6 +21,14 @@ def init(frame_buffer, token, framerate=15, timelapse_dir="timelapse"):
     _token = token
     _framerate = framerate
     _timelapse_dir = os.path.abspath(timelapse_dir)
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
+
+@app.route("/")
+def root():
+    if _token:
+        return redirect(f"/{_token}")
+    abort(404)
 
 
 def _mjpeg_generator():

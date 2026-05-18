@@ -89,9 +89,9 @@ def _tunnel_monitor(port, token):
             _tunnel_proc = proc
             if url:
                 if "serveo.net" in url:
-                    print("Public tunnel:   connected (stable URL).")
+                    print(f"Public link:     {url}/{token}  (stable)")
                 else:
-                    print(f"Public link (serveo unavailable, URL may change): {url}/{token}")
+                    print(f"Public link:     {url}/{token}  (changes on reconnect)")
             else:
                 print("Tunnel failed, retrying in 30s...")
                 proc.terminate()
@@ -165,12 +165,11 @@ def main():
 
     threading.Thread(target=lambda: _tunnel_monitor(STREAM_PORT, token), daemon=True).start()
 
-    subdomain = _stable_subdomain(token)
     lan_ip = _get_lan_ip()
     print(f"Stream live at  http://localhost:{STREAM_PORT}/{token}")
     if lan_ip:
         print(f"On your network: http://{lan_ip}:{STREAM_PORT}/{token}")
-    print(f"Public link:     https://{subdomain}.serveo.net/{token}")
+    print("Public link:     (connecting...)")
     print("Press Ctrl+C to stop.")
 
     try:
