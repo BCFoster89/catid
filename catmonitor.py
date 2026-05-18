@@ -43,31 +43,38 @@ def _stable_subdomain(token):
     return f"cat{safe}"
 
 
-def _start_public_tunnel(port, subdomain):
+def _try_tunnel(cmd, pattern, timeout):
     url_holder = [None]
     url_ready = threading.Event()
-    proc = subprocess.Popen(
-        [
-            "ssh", "-o", "StrictHostKeyChecking=no",
-            "-o", "ServerAliveInterval=30",
-            "-R", f"{subdomain}:80:localhost:{port}",
-            "serveo.net",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
     def _read():
         for line in proc.stdout:
-            m = re.search(r'https://\S+\.serveo\.net', line)
+            m = re.search(pattern, line)
             if m:
                 url_holder[0] = m.group(0).rstrip(".")
                 url_ready.set()
 
     threading.Thread(target=_read, daemon=True).start()
-    url_ready.wait(timeout=15)
+    url_ready.wait(timeout=timeout)
     return proc, url_holder[0]
+
+
+def _start_public_tunnel(port, subdomain):
+    proc, url = _try_tunnel(
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
+         "-R", f"{subdomain}:80:localhost:{port}", "serveo.net"],
+        r'https://\S+\.serveo\.net', 20,
+    )
+    if url:
+        return proc, url
+
+    proc.terminate()
+    return _try_tunnel(
+        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
+         "-R", f"80:localhost:{port}", "nokey@localhost.run"],
+        r'https://\S+\.lhr\.life', 15,
+    )
 
 
 _tunnel_proc = None
@@ -81,7 +88,10 @@ def _tunnel_monitor(port, token):
             proc, url = _start_public_tunnel(port, subdomain)
             _tunnel_proc = proc
             if url:
-                print("Public tunnel:   connected.")
+                if "serveo.net" in url:
+                    print("Public tunnel:   connected (stable URL).")
+                else:
+                    print(f"Public link (serveo unavailable, URL may change): {url}/{token}")
             else:
                 print("Tunnel failed, retrying in 30s...")
                 proc.terminate()
