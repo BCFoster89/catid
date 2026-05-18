@@ -1,6 +1,8 @@
+import argparse
 import os
 import re
 import secrets
+import shutil
 import socket
 import subprocess
 import threading
@@ -36,15 +38,20 @@ class FrameBuffer:
             return self._frame
 
 
-def _start_public_tunnel(port):
+def _stable_subdomain(token):
+    safe = re.sub(r'[^a-z0-9]', '', token.lower())[:20]
+    return f"cat{safe}"
+
+
+def _start_public_tunnel(port, subdomain):
     url_holder = [None]
     url_ready = threading.Event()
     proc = subprocess.Popen(
         [
             "ssh", "-o", "StrictHostKeyChecking=no",
             "-o", "ServerAliveInterval=30",
-            "-R", f"80:localhost:{port}",
-            "nokey@localhost.run",
+            "-R", f"{subdomain}:80:localhost:{port}",
+            "serveo.net",
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -53,7 +60,7 @@ def _start_public_tunnel(port):
 
     def _read():
         for line in proc.stdout:
-            m = re.search(r'https://\S+\.lhr\.life', line)
+            m = re.search(r'https://\S+\.serveo\.net', line)
             if m:
                 url_holder[0] = m.group(0).rstrip(".")
                 url_ready.set()
@@ -68,12 +75,13 @@ _tunnel_proc = None
 
 def _tunnel_monitor(port, token):
     global _tunnel_proc
+    subdomain = _stable_subdomain(token)
     while True:
         try:
-            proc, url = _start_public_tunnel(port)
+            proc, url = _start_public_tunnel(port, subdomain)
             _tunnel_proc = proc
             if url:
-                print(f"Public link:     {url}/{token}")
+                print("Public tunnel:   connected.")
             else:
                 print("Tunnel failed, retrying in 30s...")
                 proc.terminate()
@@ -112,6 +120,18 @@ def load_or_create_token():
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--clear", action="store_true", help="Delete all timelapse frames and exit")
+    args = parser.parse_args()
+
+    if args.clear:
+        if os.path.exists(TIMELAPSE_DIR):
+            shutil.rmtree(TIMELAPSE_DIR)
+            print(f"Cleared {TIMELAPSE_DIR}/")
+        else:
+            print("No timelapse directory found.")
+        return
+
     token = load_or_create_token()
     buffer = FrameBuffer()
 
@@ -135,11 +155,12 @@ def main():
 
     threading.Thread(target=lambda: _tunnel_monitor(STREAM_PORT, token), daemon=True).start()
 
+    subdomain = _stable_subdomain(token)
     lan_ip = _get_lan_ip()
     print(f"Stream live at  http://localhost:{STREAM_PORT}/{token}")
     if lan_ip:
         print(f"On your network: http://{lan_ip}:{STREAM_PORT}/{token}")
-    print("Public link:     (connecting...)")
+    print(f"Public link:     https://{subdomain}.serveo.net/{token}")
     print("Press Ctrl+C to stop.")
 
     try:
