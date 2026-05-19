@@ -68,6 +68,7 @@ def viewer(token):
   <img id="feed" alt="live feed">
   <div id="bar">
     <button id="tl-btn" onclick="startTimelapse()">&#9654; Timelapse</button>
+    <button id="pause-btn" style="display:none" onclick="togglePause()">&#9646;&#9646; Pause</button>
     <span id="tl-info"></span>
     <button id="live-btn" style="display:none" onclick="stopTimelapse()">&#10005; Back to Live</button>
     <button onclick="location.href='/{token}/timelapse-download'">&#8595; Download</button>
@@ -75,9 +76,11 @@ def viewer(token):
   <script>
     var img = document.getElementById('feed');
     var tlBtn = document.getElementById('tl-btn');
+    var pauseBtn = document.getElementById('pause-btn');
     var liveBtn = document.getElementById('live-btn');
     var tlInfo = document.getElementById('tl-info');
     var live = true;
+    var paused = false;
     var frames = [];
     var idx = 0;
     var timer = null;
@@ -98,29 +101,40 @@ def viewer(token):
           frames = files;
           idx = 0;
           live = false;
+          paused = false;
           tlBtn.style.display = 'none';
+          pauseBtn.style.display = '';
           liveBtn.style.display = '';
           playFrame();
         }});
     }}
 
     function playFrame() {{
-      if (live) return;
+      if (live || paused) return;
       var n = new Image();
       n.onload = function() {{
-        if (live) return;
+        if (live || paused) return;
         img.src = n.src;
         tlInfo.textContent = (idx + 1) + ' / ' + frames.length;
         idx = (idx + 1) % frames.length;
         timer = setTimeout(playFrame, 50);
       }};
-      n.onerror = function() {{ if (!live) setTimeout(playFrame, 200); }};
+      n.onerror = function() {{ if (!live && !paused) setTimeout(playFrame, 200); }};
       n.src = '/{token}/timelapse/' + frames[idx] + '?' + Date.now();
+    }}
+
+    function togglePause() {{
+      paused = !paused;
+      pauseBtn.innerHTML = paused ? '&#9654; Play' : '&#9646;&#9646; Pause';
+      if (!paused) playFrame();
     }}
 
     function stopTimelapse() {{
       live = true;
+      paused = false;
       clearTimeout(timer);
+      pauseBtn.style.display = 'none';
+      pauseBtn.innerHTML = '&#9646;&#9646; Pause';
       liveBtn.style.display = 'none';
       tlBtn.style.display = '';
       tlInfo.textContent = '';
