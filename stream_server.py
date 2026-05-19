@@ -106,10 +106,16 @@ def viewer(token):
 
     function playFrame() {{
       if (live) return;
-      img.src = '/{token}/timelapse/' + frames[idx] + '?' + Date.now();
-      tlInfo.textContent = (idx + 1) + ' / ' + frames.length;
-      idx = (idx + 1) % frames.length;
-      timer = setTimeout(playFrame, 100);
+      var n = new Image();
+      n.onload = function() {{
+        if (live) return;
+        img.src = n.src;
+        tlInfo.textContent = (idx + 1) + ' / ' + frames.length;
+        idx = (idx + 1) % frames.length;
+        timer = setTimeout(playFrame, 50);
+      }};
+      n.onerror = function() {{ if (!live) setTimeout(playFrame, 200); }};
+      n.src = '/{token}/timelapse/' + frames[idx] + '?' + Date.now();
     }}
 
     function stopTimelapse() {{
