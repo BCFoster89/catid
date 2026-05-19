@@ -38,43 +38,38 @@ class FrameBuffer:
             return self._frame
 
 
-def _stable_subdomain(token):
-    safe = re.sub(r'[^a-z0-9]', '', token.lower())[:20]
-    return f"cat{safe}"
+_PUBLIC_URL_FILE = "public_url.txt"
 
 
-def _try_tunnel(cmd, pattern, timeout):
+def _start_public_tunnel(port):
     url_holder = [None]
     url_ready = threading.Event()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen(
+        [
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "ConnectTimeout=10",
+            "-o", "ExitOnForwardFailure=yes",
+            "-o", "ServerAliveInterval=20",
+            "-o", "ServerAliveCountMax=3",
+            "-R", f"80:localhost:{port}",
+            "nokey@localhost.run",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
 
     def _read():
         for line in proc.stdout:
-            m = re.search(pattern, line)
+            m = re.search(r'https://\S+\.lhr\.life', line)
             if m:
                 url_holder[0] = m.group(0).rstrip(".")
                 url_ready.set()
 
     threading.Thread(target=_read, daemon=True).start()
-    url_ready.wait(timeout=timeout)
+    url_ready.wait(timeout=30)
     return proc, url_holder[0]
-
-
-def _start_public_tunnel(port, subdomain):
-    proc, url = _try_tunnel(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
-         "-R", f"{subdomain}:80:localhost:{port}", "serveo.net"],
-        r'https://\S+\.serveo\.net', 20,
-    )
-    if url:
-        return proc, url
-
-    proc.terminate()
-    return _try_tunnel(
-        ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ServerAliveInterval=30",
-         "-R", f"80:localhost:{port}", "nokey@localhost.run"],
-        r'https://\S+\.lhr\.life', 15,
-    )
 
 
 _tunnel_proc = None
@@ -82,16 +77,18 @@ _tunnel_proc = None
 
 def _tunnel_monitor(port, token):
     global _tunnel_proc
-    subdomain = _stable_subdomain(token)
     while True:
         try:
-            proc, url = _start_public_tunnel(port, subdomain)
+            proc, url = _start_public_tunnel(port)
             _tunnel_proc = proc
             if url:
-                if "serveo.net" in url:
-                    print(f"Public link:     {url}/{token}  (stable)")
-                else:
-                    print(f"Public link:     {url}/{token}  (changes on reconnect)")
+                full = f"{url}/{token}"
+                print(f"Public link:     {full}")
+                try:
+                    with open(_PUBLIC_URL_FILE, "w") as f:
+                        f.write(full + "\n")
+                except Exception:
+                    pass
             else:
                 print("Tunnel failed, retrying in 30s...")
                 proc.terminate()
@@ -100,6 +97,10 @@ def _tunnel_monitor(port, token):
                 continue
             proc.wait()
             _tunnel_proc = None
+            try:
+                os.remove(_PUBLIC_URL_FILE)
+            except FileNotFoundError:
+                pass
             print("Tunnel dropped, reconnecting in 5s...")
             time.sleep(5)
         except Exception as e:
