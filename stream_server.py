@@ -13,14 +13,16 @@ _buffer = None
 _token = None
 _framerate = 15
 _timelapse_dir = "timelapse"
+_public_url_file = "public_url.txt"
 
 
-def init(frame_buffer, token, framerate=15, timelapse_dir="timelapse"):
-    global _buffer, _token, _framerate, _timelapse_dir
+def init(frame_buffer, token, framerate=15, timelapse_dir="timelapse", public_url_file="public_url.txt"):
+    global _buffer, _token, _framerate, _timelapse_dir, _public_url_file
     _buffer = frame_buffer
     _token = token
     _framerate = framerate
     _timelapse_dir = os.path.abspath(timelapse_dir)
+    _public_url_file = public_url_file
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 
@@ -29,6 +31,24 @@ def root():
     if _token:
         return redirect(f"/{_token}")
     abort(404)
+
+
+@app.route("/<token>/url")
+def current_url(token):
+    if token != _token:
+        abort(404)
+    try:
+        with open(_public_url_file) as f:
+            url = f.read().strip()
+        if url:
+            return redirect(url)
+    except FileNotFoundError:
+        pass
+    return Response(
+        "<!doctype html><html><body style='font-family:sans-serif;padding:2em'>"
+        "<p>Tunnel is currently offline. Try again in a moment.</p></body></html>",
+        mimetype="text/html",
+    )
 
 
 def _mjpeg_generator():

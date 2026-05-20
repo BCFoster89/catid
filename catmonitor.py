@@ -146,7 +146,7 @@ def main():
     token = load_or_create_token()
     buffer = FrameBuffer()
 
-    stream_server.init(buffer, token, FRAMERATE, TIMELAPSE_DIR)
+    stream_server.init(buffer, token, FRAMERATE, TIMELAPSE_DIR, _PUBLIC_URL_FILE)
     flask_thread = threading.Thread(
         target=lambda: stream_server.app.run(host="0.0.0.0", port=STREAM_PORT, threaded=True),
         daemon=True,
